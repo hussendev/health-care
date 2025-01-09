@@ -74,8 +74,8 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
                                     ),
                                   ),
                                   Text(
-                                    'Age',
-                                    // 'Age: ${_calculateAge(data['dateOfBirth'])}',
+                                    // 'Age',
+                                    'Age: ${_calculateAge(data['dateOfBirth'])}',
                                     style: const TextStyle(fontSize: 16),
                                   ),
                                   Text(
@@ -117,17 +117,6 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            _buildActionButton(
-                              icon: Icons.calendar_today,
-                              label: 'Schedule\nAppointment',
-                              onTap: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/doctor/schedule-appointment',
-                                  arguments: {'patientId': patientId},
-                                );
-                              },
-                            ),
                             _buildActionButton(
                               icon: Icons.note_add,
                               label: 'Add Medical\nRecord',
@@ -177,11 +166,11 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
                             ),
                             TextButton(
                               onPressed: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/doctor/patient-history',
-                                  arguments: {'patientId': patientId},
-                                );
+                                // Navigator.pushNamed(
+                                //   context,
+                                //   '/doctor/patient-history',
+                                //   arguments: {'patientId': patientId},
+                                // );
                               },
                               child: const Text('View All'),
                             ),
@@ -221,6 +210,19 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
         },
       ),
     );
+  }
+
+  _calculateAge(Timestamp dateOfBirth) {
+    final dob = dateOfBirth.toDate();
+    final now = DateTime.now();
+    final age = now.year - dob.year;
+    if (now.month < dob.month) {
+      return age - 1;
+    }
+    if (now.month == dob.month && now.day < dob.day) {
+      return age - 1;
+    }
+    return age;
   }
 
   Widget _buildInfoRow(String label, String value) {
@@ -269,31 +271,12 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     );
   }
 
-  String _calculateAge(Timestamp dateOfBirth) {
-    final dob = dateOfBirth.toDate();
-    final now = DateTime.now();
-    var age = now.year - dob.year;
-    final month1 = now.month;
-    final month2 = dob.month;
-    if (month2 > month1) {
-      age--;
-    } else if (month1 == month2) {
-      final day1 = now.day;
-      final day2 = dob.day;
-      if (day2 > day1) {
-        age--;
-      }
-    }
-    return age.toString();
-  }
-
   Widget _buildHistoryList(String patientId) {
     return StreamBuilder<QuerySnapshot>(
       stream: _firestore
-          .collection('patients')
-          .doc(patientId)
-          .collection('medicalHistory')
-          .orderBy('date', descending: true)
+          .collection('medical_records')
+          .where('patientId', isEqualTo:patientId)
+          .orderBy('recordDate', descending: true)
           .limit(3)
           .snapshots(),
       builder: (context, snapshot) {
@@ -316,7 +299,16 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
             final data = doc.data() as Map<String, dynamic>;
             return ListTile(
               title: Text(data['title'] ?? 'Unknown'),
-              subtitle: Text(data['date'] ?? 'Unknown'),
+
+              // subtitle:
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(data['recordDate'].toDate().toString() ?? 'Unknown'),
+                  Text('Type: ${data['type']}'),
+                  Text('Status: ${data['status']}'),
+                ],
+              ),
               onTap: () {
                 Navigator.pushNamed(
                   context,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../models/medical_record_types.dart';
 import '../../services/auth_service.dart';
 
 class PatientMedicalRecordsScreen extends StatefulWidget {
@@ -12,13 +13,11 @@ class PatientMedicalRecordsScreen extends StatefulWidget {
 class _PatientMedicalRecordsScreenState extends State<PatientMedicalRecordsScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _authService = AuthService();
-  String _selectedFilter = 'all';
 
   final List<String> _recordTypes = [
     'All',
     'Lab Report',
     'Imaging Report',
-    'Prescription',
     'Treatment Plan',
     'Progress Notes',
     'Referral Letter',
@@ -43,7 +42,10 @@ class _PatientMedicalRecordsScreenState extends State<PatientMedicalRecordsScree
         ),
         body: TabBarView(
           children: [
-            ..._recordTypes.map((type) => _buildRecordsList(type)),
+            // ..._recordTypes.map((type) => _buildRecordsList(type)),
+            ...MedicalRecordType.allTypes.map((type) {
+              return _buildRecordsList(type);
+            }),
           ],
         ),
       ),

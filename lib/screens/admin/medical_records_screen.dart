@@ -1,6 +1,8 @@
+// lib/screens/admin/admin_medical_records_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../services/auth_service.dart';
+import '../../models/medical_record_types.dart';
+import '../../services/medical_records_service.dart';
 
 class AdminMedicalRecordsScreen extends StatefulWidget {
   const AdminMedicalRecordsScreen({Key? key}) : super(key: key);
@@ -12,146 +14,170 @@ class AdminMedicalRecordsScreen extends StatefulWidget {
 class _AdminMedicalRecordsScreenState extends State<AdminMedicalRecordsScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _searchController = TextEditingController();
+  String _selectedType = 'all';
   String _selectedFilter = 'all';
-  bool _isLoading = false;
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 4,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Medical Records Management'),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(100),
-            child: Column(
-              children: [
-                // Search Bar
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: TextField(
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Medical Records Management'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            onPressed: () => _generateReport(),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Search and Filter Section
+          Card(
+            margin: const EdgeInsets.all(8),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                children: [
+                  // Search Bar
+                  TextField(
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: 'Search records...',
                       prefixIcon: const Icon(Icons.search),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      filled: true,
-                      fillColor: Colors.white,
                     ),
                     onChanged: (value) => setState(() {}),
                   ),
-                ),
-                // Tabs
-                const TabBar(
-                  tabs: [
-                    Tab(text: 'All'),
-                    Tab(text: 'Lab Reports'),
-                    Tab(text: 'Prescriptions'),
-                    Tab(text: 'Other'),
-                  ],
-                ),
-              ],
+                  const SizedBox(height: 8),
+
+                  // Type Filter
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        FilterChip(
+                          label: const Text('All'),
+                          selected: _selectedType == 'all',
+                          onSelected: (selected) {
+                            setState(() => _selectedType = 'all');
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ...MedicalRecordType.allTypes.map((type) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(type),
+                              selected: _selectedType == type,
+                              onSelected: (selected) {
+                                setState(() => _selectedType = type);
+                              },
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildRecordsList('all'),
-            _buildRecordsList('Lab Report'),
-            _buildRecordsList('Prescription'),
-            _buildRecordsList('Other'),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {
-            // Show options to manage records
-            _showManagementOptions();
-          },
-          child: const Icon(Icons.more_vert),
-        ),
+
+          // Records List
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _getFilteredRecordsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final records = snapshot.data?.docs ?? [];
+
+                if (records.isEmpty) {
+                  return const Center(child: Text('No records found'));
+                }
+
+                return ListView.builder(
+                  itemCount: records.length,
+                  padding: const EdgeInsets.all(8),
+                  itemBuilder: (context, index) {
+                    final record = records[index].data() as Map<String, dynamic>;
+                    final recordId = records[index].id;
+
+                    return Card(
+                      child: ListTile(
+                        leading: _getRecordTypeIcon(record['type']),
+                        title: Text(record['title'] ?? 'Untitled'),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Type: ${record['type']}'),
+                            Text('Patient: ${record['patientName'] ?? 'Unknown'}'),
+                            Text('Doctor: Dr. ${record['doctorName'] ?? 'Unknown'}'),
+                            Text('Date: ${_formatDate(record['recordDate'] as Timestamp)}'),
+                          ],
+                        ),
+                        trailing: PopupMenuButton(
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'view',
+                              child: Text('View Details'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'audit',
+                              child: Text('View Audit Trail'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'backup',
+                              child: Text('Create Backup'),
+                            ),
+                            const PopupMenuItem(
+                              value: 'archive',
+                              child: Text('Archive Record'),
+                            ),
+                          ],
+                          onSelected: (value) => _handleRecordAction(value, recordId, record),
+                        ),
+                        onTap: () => _showRecordDetails(record),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showManagementOptions,
+        child: const Icon(Icons.more_vert),
       ),
     );
   }
 
-  Widget _buildRecordsList(String type) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _getRecordsStream(type),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final records = snapshot.data?.docs ?? [];
-
-        if (records.isEmpty) {
-          return Center(
-            child: Text('No ${type == 'all' ? 'medical records' : '$type records'} found'),
-          );
-        }
-
-        return ListView.builder(
-          itemCount: records.length,
-          padding: const EdgeInsets.all(8),
-          itemBuilder: (context, index) {
-            final record = records[index].data() as Map<String, dynamic>;
-            final recordId = records[index].id;
-
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  child: _getRecordTypeIcon(record['type']),
-                ),
-                title: Text(record['title'] ?? 'Untitled Record'),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Patient: ${record['patientName'] ?? 'Unknown'}'),
-                    Text('Doctor: Dr. ${record['doctorName'] ?? 'Unknown'}'),
-                    Text('Date: ${_formatDate(record['createdAt'] as Timestamp)}'),
-                  ],
-                ),
-                trailing: PopupMenuButton(
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'view',
-                      child: Text('View Details'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'backup',
-                      child: Text('Backup'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'archive',
-                      child: Text('Archive'),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Text('Delete'),
-                    ),
-                  ],
-                  onSelected: (value) => _handleRecordAction(value, recordId, record),
-                ),
-                onTap: () => _showRecordDetails(record),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Stream<QuerySnapshot> _getRecordsStream(String type) {
+  Stream<QuerySnapshot> _getFilteredRecordsStream() {
     Query query = _firestore.collection('medical_records')
-        .orderBy('createdAt', descending: true);
+        .orderBy('recordDate', descending: true);
 
-    if (type != 'All') {
-      query = query.where('type', isEqualTo: type);
+    if (_selectedType != 'all') {
+      query = query.where('type', isEqualTo: _selectedType);
+    }
+
+    if (_startDate != null) {
+      query = query.where('recordDate', isGreaterThanOrEqualTo: Timestamp.fromDate(_startDate!));
+    }
+
+    if (_endDate != null) {
+      query = query.where('recordDate', isLessThanOrEqualTo: Timestamp.fromDate(_endDate!));
     }
 
     // Apply search filter if text is entered
@@ -160,6 +186,117 @@ class _AdminMedicalRecordsScreenState extends State<AdminMedicalRecordsScreen> {
     }
 
     return query.snapshots();
+  }
+
+  Widget _getRecordTypeIcon(String type) {
+    IconData iconData;
+    switch (type) {
+      case 'Prescription':
+        iconData = Icons.medical_services;
+        break;
+      case 'Lab Result':
+        iconData = Icons.science;
+        break;
+      case 'Imaging':
+        iconData = Icons.image;
+        break;
+      case 'Diagnosis':
+        iconData = Icons.health_and_safety;
+        break;
+      default:
+        iconData = Icons.description;
+    }
+
+    return CircleAvatar(
+      child: Icon(iconData),
+    );
+  }
+
+  String _formatDate(Timestamp timestamp) {
+    final date = timestamp.toDate();
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  void _showRecordDetails(Map<String, dynamic> record) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        expand: false,
+        builder: (context, scrollController) {
+          return SingleChildScrollView(
+            controller: scrollController,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  record['title'] ?? 'Record Details',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const Divider(height: 32),
+                _buildDetailRow('Type', record['type']),
+                _buildDetailRow('Patient', record['patientName'] ?? 'Unknown'),
+                _buildDetailRow('Doctor', 'Dr. ${record['doctorName'] ?? 'Unknown'}'),
+                _buildDetailRow('Date', _formatDate(record['recordDate'] as Timestamp)),
+                if (record['description'] != null)
+                  _buildDetailRow('Description', record['description']),
+
+                // Type-specific details
+                if (record['type'] == 'Prescription') ...[
+                  const SizedBox(height: 16),
+                  const Text('Medications',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ...((record['metadata']?['medications'] ?? []) as List)
+                      .map((med) => ListTile(
+                    title: Text(med['name']),
+                    subtitle: Text(
+                        'Dosage: ${med['dosage']}\n'
+                            'Frequency: ${med['frequency']}\n'
+                            'Duration: ${med['duration']}'),
+                  )),
+                ],
+
+                // File attachment
+                if (record['fileUrl'] != null) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.download),
+                    label: const Text('Download File'),
+                    onPressed: () => _downloadFile(record['fileUrl']),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
   }
 
   void _showManagementOptions() {
@@ -205,94 +342,13 @@ class _AdminMedicalRecordsScreenState extends State<AdminMedicalRecordsScreen> {
     );
   }
 
-  void _showRecordDetails(Map<String, dynamic> record) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        minChildSize: 0.4,
-        expand: false,
-        builder: (context, scrollController) {
-          return SingleChildScrollView(
-            controller: scrollController,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  record['title'] ?? 'Record Details',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const Divider(height: 32),
-                _buildDetailRow('Record Type', record['type'] ?? 'Unknown'),
-                _buildDetailRow('Patient', record['patientName'] ?? 'Unknown'),
-                _buildDetailRow('Doctor', 'Dr. ${record['doctorName'] ?? 'Unknown'}'),
-                _buildDetailRow('Created', _formatDate(record['createdAt'] as Timestamp)),
-                _buildDetailRow('Status', record['status'] ?? 'Active'),
-                if (record['description'] != null)
-                  _buildDetailRow('Description', record['description']),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    // Implement download functionality
-                  },
-                  icon: const Icon(Icons.download),
-                  label: const Text('Download Record'),
-                  style: ElevatedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              '$label:',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-
-  Icon _getRecordTypeIcon(String? type) {
-    switch (type) {
-      case 'Lab Report':
-        return const Icon(Icons.science);
-      case 'Prescription':
-        return const Icon(Icons.medical_services);
-      case 'Imaging':
-        return const Icon(Icons.image);
-      default:
-        return const Icon(Icons.description);
-    }
-  }
-
-  String _formatDate(Timestamp timestamp) {
-    final date = timestamp.toDate();
-    return '${date.day}/${date.month}/${date.year}';
-  }
-
   Future<void> _handleRecordAction(String action, String recordId, Map<String, dynamic> record) async {
     switch (action) {
       case 'view':
         _showRecordDetails(record);
+        break;
+      case 'audit':
+        _showAuditTrail(recordId);
         break;
       case 'backup':
         await _backupRecord(recordId);
@@ -300,10 +356,12 @@ class _AdminMedicalRecordsScreenState extends State<AdminMedicalRecordsScreen> {
       case 'archive':
         await _archiveRecord(recordId);
         break;
-      case 'delete':
-        await _deleteRecord(recordId);
-        break;
     }
+  }
+
+  // Implement other helper methods...
+  void _showAuditTrail(String recordId) {
+    // Implement audit trail view
   }
 
   Future<void> _backupRecord(String recordId) async {
@@ -312,10 +370,6 @@ class _AdminMedicalRecordsScreenState extends State<AdminMedicalRecordsScreen> {
 
   Future<void> _archiveRecord(String recordId) async {
     // Implement archive functionality
-  }
-
-  Future<void> _deleteRecord(String recordId) async {
-    // Implement delete functionality
   }
 
   Future<void> _backupAllRecords() async {
@@ -327,11 +381,15 @@ class _AdminMedicalRecordsScreenState extends State<AdminMedicalRecordsScreen> {
   }
 
   Future<void> _generateReport() async {
-    // Implement report generation functionality
+    // Implement report generation
   }
 
   void _showRecordSettings() {
     // Implement settings dialog
+  }
+
+  Future<void> _downloadFile(String fileUrl) async {
+    // Implement file download
   }
 
   @override

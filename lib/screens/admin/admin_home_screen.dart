@@ -65,7 +65,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
             'Billing',
             Icons.payment,
             'Manage billing and payments',
-                () => Navigator.pushNamed(context, '/admin/billing'),
+                () {},
             Colors.orange,
           ),
           _buildDashboardCard(

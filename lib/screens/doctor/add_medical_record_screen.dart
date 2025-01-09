@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../models/medical_record_types.dart';
 import '../../services/auth_service.dart';
 
 class AddMedicalRecordScreen extends StatefulWidget {
@@ -222,7 +223,10 @@ class _AddMedicalRecordScreenState extends State<AddMedicalRecordScreen> {
                 labelText: 'Record Type',
                 border: OutlineInputBorder(),
               ),
-              items: _recordTypes.map((type) {
+              // items: _recordTypes.map((type) {
+              //   return DropdownMenuItem(value: type, child: Text(type));
+              // }).toList(),
+              items: MedicalRecordType.allTypes.map((type) {
                 return DropdownMenuItem(value: type, child: Text(type));
               }).toList(),
               validator: (value) {

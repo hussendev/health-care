@@ -73,7 +73,10 @@ class AppRoutes {
       '/doctor/medical-records': (context) => const DoctorMedicalRecordsScreen(),
       '/doctor/prescriptions': (context) => const PrescriptionsScreen(),
       '/doctor/prescriptions/add': (context) => const AddPrescriptionScreen(),
-      '/doctor/medical-records/add': (context) => const AddMedicalRecordScreen(),
+      '/doctor/medical-records/add': (context) {
+        final args = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+        return AddMedicalRecordScreen(args: args);
+      },
       // '/doctor/medical-notes': (context) => const MedicalNotesScreen(args: args),
       '/doctor/profile': (context) => const DoctorProfileScreen(),
       '/doctor/schedule': (context) => const ScheduleScreen(),
